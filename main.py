@@ -8,13 +8,12 @@ app = FastAPI()
 # temporary cart (in memory)
 ongoing_order = {}
 
-conn = pymysql.connect(
+conn = mysql.connector.connect(
     host=os.getenv("MYSQLHOST"),
     user=os.getenv("MYSQLUSER"),
     password=os.getenv("MYSQLPASSWORD"),
     database=os.getenv("MYSQLDATABASE"),
-    port=int(os.getenv("MYSQLPORT") or 3306),  
-    cursorclass=pymysql.cursors.Cursor
+    port=int(os.getenv("MYSQLPORT")),  
 )
 
 cursor = conn.cursor()
