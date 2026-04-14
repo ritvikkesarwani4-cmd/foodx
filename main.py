@@ -1,18 +1,21 @@
 from fastapi import FastAPI, Request
 import mysql.connector
+import os 
+import pymysql
 
 app = FastAPI()
 
 # temporary cart (in memory)
 ongoing_order = {}
 
-conn = mysql.connector.connect(
-    host="localhost",
-    user="root",
-    password="rootsql",
-    database="foodx"
+connection = pymysql.connect(
+    host=os.getenv("MYSQLHOST"),
+    user=os.getenv("MYSQLUSER"),
+    password=os.getenv("MYSQLPASSWORD"),
+    database=os.getenv("MYSQLDATABASE"),
+    port=int(os.getenv("MYSQLPORT"))
 )
-cursor = conn.cursor()
+cursor = connection.cursor()
 
 @app.post("/webhook")
 async def webhook(req: Request):
