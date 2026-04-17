@@ -1,13 +1,13 @@
 from fastapi import FastAPI, Request
+import os
 import mysql.connector
-import os 
-import pymysql
 
 app = FastAPI()
 
-# temporary cart (in memory)
-ongoing_order = {}
+# 🔥 session-based carts (fix for Railway issue)
+ongoing_orders = {}
 
+# 🔥 DB connection (replace with Railway creds)
 conn = mysql.connector.connect(
     host=os.getenv("MYSQLHOST"),
     user=os.getenv("MYSQLUSER"),
@@ -15,82 +15,89 @@ conn = mysql.connector.connect(
     database=os.getenv("MYSQLDATABASE"),
     port=int(os.getenv("MYSQLPORT")),  
 )
-
 cursor = conn.cursor()
 
 @app.post("/webhook")
 async def webhook(req: Request):
-    global ongoing_order
-
     data = await req.json()
 
+    session = data["session"]
     intent = data["queryResult"]["intent"]["displayName"]
     params = data["queryResult"]["parameters"]
 
-    # ADD ORDER
+    # ✅ create cart per user session
+    if session not in ongoing_orders:
+        ongoing_orders[session] = {}
+
+    cart = ongoing_orders[session]
+
+    # ---------------- ADD ORDER ----------------
     if intent == "add_order":
         items = params.get("food-item", [])
         numbers = params.get("number", [])
 
-    # fallback if number missing
         if not numbers:
             numbers = [1] * len(items)
 
-        # fix mismatch length (very common)
         if len(numbers) != len(items):
             numbers = [numbers[0]] * len(items)
 
         for item, qty in zip(items, numbers):
+            item = item.title()
             qty = int(qty)
-            if item in ongoing_order:
-                ongoing_order[item] += qty
-            else:
-                ongoing_order[item] = qty
 
-        print("CART:", ongoing_order)
+            if item in cart:
+                cart[item] += qty
+            else:
+                cart[item] = qty
 
         return {
-            "fulfillmentText": f"Added items. Current order: {ongoing_order}. Anything else? or anything need to remove ?"
+            "fulfillmentText": f"Current order: {cart}"
         }
-    # REMOVE ORDER
+
+    # ---------------- REMOVE ORDER ----------------
     elif intent == "remove_order":
         items = params.get("food-item", [])
         numbers = params.get("number", [])
 
-        # if no number → remove ALL
+        # remove ALL if no number
         if not numbers:
             for item in items:
-                if item in ongoing_order:
-                    del ongoing_order[item]
+                item = item.title()
+                if item in cart:
+                    del cart[item]
 
-            return {
-                "fulfillmentText": f"Updated order: {ongoing_order}.Anything else?"
-            }
+        else:
+            if len(numbers) != len(items):
+                numbers = [numbers[0]] * len(items)
 
-        # if number exists → remove specific qty
-        for item, qty in zip(items, numbers):
-            qty = int(qty)
+            for item, qty in zip(items, numbers):
+                item = item.title()
+                qty = int(qty)
 
-            if item in ongoing_order:
-                ongoing_order[item] -= qty
-
-                if ongoing_order[item] <= 0:
-                    del ongoing_order[item]
+                if item in cart:
+                    cart[item] -= qty
+                    if cart[item] <= 0:
+                        del cart[item]
 
         return {
-            "fulfillmentText": f"Updated order: {ongoing_order}.Anything else?"
-}
-    # COMPLETE ORDER
+            "fulfillmentText": f"Updated order: {cart}"
+        }
+
+    # ---------------- COMPLETE ORDER ----------------
     elif intent == "order_complete":
 
-        # create order
+        if not cart:
+            return {"fulfillmentText": "Your cart is empty"}
+
+        # create new order
         cursor.execute("INSERT INTO orders () VALUES ()")
         conn.commit()
 
-        order_id = cursor.lastrowid  # 🔥 THIS IS YOUR SIMPLE ID
+        order_id = cursor.lastrowid  # 🔥 simple numeric ID
 
-        # insert items
-        for item, qty in ongoing_order.items():
+        # save items
+        for item, qty in cart.items():
             cursor.execute(
                 "INSERT INTO order_items (order_id, item, qty) VALUES (%s, %s, %s)",
                 (order_id, item, qty)
@@ -98,15 +105,24 @@ async def webhook(req: Request):
 
         conn.commit()
 
-        ongoing_order = {}
+        # clear only this user's cart
+        ongoing_orders[session] = {}
 
         return {
-            "fulfillmentText": f"Order placed! Your order id is {order_id} , you can track it with that id."
+            "fulfillmentText": f"Order placed! Your order id is {order_id}"
         }
 
-    # TRACK ORDER
+    # ---------------- TRACK ORDER ----------------
     elif intent == "track_order":
-        order_id = params.get("order_id")
+        raw_id = params.get("order_id")
+
+        try:
+            if isinstance(raw_id, list):
+                order_id = int(raw_id[0])
+            else:
+                order_id = int(raw_id)
+        except:
+            return {"fulfillmentText": "Invalid order id"}
 
         cursor.execute(
             "SELECT item, qty FROM order_items WHERE order_id=%s",
@@ -123,4 +139,5 @@ async def webhook(req: Request):
             "fulfillmentText": f"Your order: {result}"
         }
 
-    return {"fulfillmentText": "Unknown request"}
+    # ---------------- DEFAULT ----------------
+    return {"fulfillmentText": "I didn’t understand"}
