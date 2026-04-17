@@ -52,7 +52,7 @@ async def webhook(req: Request):
                 cart[item] = qty
 
         return {
-            "fulfillmentText": f"Current order: {cart}"
+            "fulfillmentText": f"Current order: {cart}.Anything else? "
         }
 
     # ---------------- REMOVE ORDER ----------------
@@ -81,7 +81,7 @@ async def webhook(req: Request):
                         del cart[item]
 
         return {
-            "fulfillmentText": f"Updated order: {cart}"
+            "fulfillmentText": f"Updated order: {cart}. Anything else? "
         }
 
     # ---------------- COMPLETE ORDER ----------------
@@ -109,7 +109,7 @@ async def webhook(req: Request):
         ongoing_orders[session] = {}
 
         return {
-            "fulfillmentText": f"Order placed! Your order id is {order_id}"
+            "fulfillmentText": f"Order placed! Your order id is {order_id}. You can track it with that id."
         }
 
     # ---------------- TRACK ORDER ----------------
